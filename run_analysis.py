@@ -89,14 +89,13 @@ schach = chess.pgn.read_game(pgn)
 
 if config['eval']:
     last_significant_valuation = 0
-    # TODO: Calling `board()` may be a performance hit so if have to call it once,
-    # call it only once per position
     while schach.next():
         schach = schach.next()
-        fen = schach.board().fen()
+        board = schach.board()
+        fen = board.fen()
         set_pos(fen)
         valuation = get_eval(fen)
-        move_num = schach.board().fullmove_number # i.e., not the ply
+        move_num = board.fullmove_number # i.e., not the ply
 
         if is_an_int(valuation):
             if abs(int(valuation) - last_significant_valuation) > VALUATION_THRESHOLD_CP:
