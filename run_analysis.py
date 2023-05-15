@@ -22,6 +22,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="Arg Parse Stuff")
     parser.add_argument("-f", "--file", help="PGN file to parse")
     parser.add_argument("-e", "--eval", action="store_true", help="Find evaluation swings")
+    parser.add_argument("-d", "--depth", help="Depth from which to do analysis")
     # Positional arguments if wanted:
     # parser.add_argument("src", help="source")
     # parser.add_argument("dst", help="dest")
@@ -33,6 +34,9 @@ def is_an_int(n):
         return True
     except ValueError:
         return False
+
+def set_depth(d):
+    stockfish.set_depth(d)
 
 def set_pos(fen):
     stockfish.set_fen_position(fen)
@@ -69,6 +73,9 @@ if pgn_file:
     pgn = open(pgn_file)
 else:
     pgn = open("test_game.pgn")
+
+if config['depth']:
+    set_depth(config['depth'])
 
 schach = chess.pgn.read_game(pgn)
 
