@@ -7,7 +7,20 @@ STOCKFISH_BIN='/usr/bin/stockfish'
 
 VALUATION_THRESHOLD_CP = 1.25*100
 
-stockfish = Stockfish(path=STOCKFISH_BIN, parameters={"Threads": 4, "UCI_LimitStrength": "true", "UCI_Elo": 1000})
+# Can set the strength of Stockfish to something more comparable to the ELO of
+# the players in the game so stockfish evaluates based on that ELO. Could be
+# useful. (actually not sure this affects position evaluation)
+#stockfish = Stockfish(path=STOCKFISH_BIN, parameters={"Threads": 6, "UCI_LimitStrength": "true", "UCI_Elo": 1000})
+
+# Default to max strength
+stockfish = Stockfish(path=STOCKFISH_BIN, parameters={"Threads": 6, "UCI_LimitStrength": "false"})
+
+def is_an_int(n):
+    try:
+        i = int(n)
+        return True
+    except ValueError:
+        return False
 
 def set_pos(fen):
     stockfish.set_fen_position(fen)
@@ -21,35 +34,41 @@ def get_eval(fen):
     v = e['value']
     t = e['type']
 
-    # TODO: the return type should be the same and the calling code deal with how
-    # to handle the values differently
     if t == 'cp':
-        # TODO: should this be converted to pawn units (v/100)
-        return v
+        # Leave as centipawns and allow caller to handle any desired
+        # conversions to pawn units.
+        # Also - leave it as a string so the return value type remains the same
+        # regardless of what is returned, so caller has to handle the difference.
+        return str(v)
     elif t == 'mate':
         color = "Black" if v < 0 else "White"
         av = abs(int(v))
         return f"M{av} for {color}"
+
+def print_position_info(s, f, v):
+    print(f"Evaluation: {v}")
+    print(f"Move made: {s.move}\n")
+    print(f"Next Best Move: {best_move(f)}")
 
 
 pgn = open("test_game.pgn")
 schach = chess.pgn.read_game(pgn)
 
 last_significant_valuation = 0
+# TODO: Calling `board()` may be a performance hit so if have to call it once,
+# call it only once per position
 while schach.next():
     schach = schach.next()
     fen = schach.board().fen()
     set_pos(fen)
     valuation = get_eval(fen)
-    move_num = round(int(schach.ply())/2)
+    move_num = schach.board().fullmove_number # i.e., not the ply
 
-    if isinstance(valuation, int):
-        if abs(valuation - last_significant_valuation) > VALUATION_THRESHOLD_CP:
+    if is_an_int(valuation):
+        if abs(int(valuation) - last_significant_valuation) > VALUATION_THRESHOLD_CP:
             print(f"Valuation swing at move {move_num}, {schach.move} ({valuation})")
-            last_significant_valuation = valuation
-    elif isinstance(valuation, str):
+            last_significant_valuation = int(valuation)
+    else:
         print(f"{valuation} at move {move_num}, {schach.move}")
 
-    #print(f"Evaluation: {valuation}")
-    #print(f"Move made: {schach.move}\n")
-    #print(f"Next Best Move: {best_move(fen)}")
+    #print_position_info(schach, fen, valuation)
