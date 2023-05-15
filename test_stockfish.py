@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+import sys
+import argparse
+
 from stockfish import Stockfish
 import chess.pgn
 
@@ -14,6 +17,15 @@ VALUATION_THRESHOLD_CP = 1.25*100
 
 # Default to max strength
 stockfish = Stockfish(path=STOCKFISH_BIN, parameters={"Threads": 6, "UCI_LimitStrength": "false"})
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Arg Parse Stuff")
+    parser.add_argument("-f", "--file", help="PGN file to parse")
+    parser.add_argument("-e", "--eval", action="store_true", help="Find evaluation swings")
+    # Positional arguments if wanted:
+    # parser.add_argument("src", help="source")
+    # parser.add_argument("dst", help="dest")
+    return vars(parser.parse_args())
 
 def is_an_int(n):
     try:
@@ -50,25 +62,34 @@ def print_position_info(s, f, v):
     print(f"Move made: {s.move}\n")
     print(f"Next Best Move: {best_move(f)}")
 
+config = parse_arguments()
 
-pgn = open("test_game.pgn")
+pgn_file = config['file']
+if pgn_file:
+    pgn = open(pgn_file)
+else:
+    pgn = open("test_game.pgn")
+
 schach = chess.pgn.read_game(pgn)
 
-last_significant_valuation = 0
-# TODO: Calling `board()` may be a performance hit so if have to call it once,
-# call it only once per position
-while schach.next():
-    schach = schach.next()
-    fen = schach.board().fen()
-    set_pos(fen)
-    valuation = get_eval(fen)
-    move_num = schach.board().fullmove_number # i.e., not the ply
+if config['eval']:
+    last_significant_valuation = 0
+    # TODO: Calling `board()` may be a performance hit so if have to call it once,
+    # call it only once per position
+    while schach.next():
+        schach = schach.next()
+        fen = schach.board().fen()
+        set_pos(fen)
+        valuation = get_eval(fen)
+        move_num = schach.board().fullmove_number # i.e., not the ply
 
-    if is_an_int(valuation):
-        if abs(int(valuation) - last_significant_valuation) > VALUATION_THRESHOLD_CP:
-            print(f"Valuation swing at move {move_num}, {schach.move} ({valuation})")
-            last_significant_valuation = int(valuation)
-    else:
-        print(f"{valuation} at move {move_num}, {schach.move}")
+        if is_an_int(valuation):
+            if abs(int(valuation) - last_significant_valuation) > VALUATION_THRESHOLD_CP:
+                print(f"Valuation swing at move {move_num}, {schach.move} ({valuation})")
+                last_significant_valuation = int(valuation)
+        else:
+            print(f"{valuation} at move {move_num}, {schach.move}")
 
-    #print_position_info(schach, fen, valuation)
+        #print_position_info(schach, fen, valuation)
+else:
+    print("Nothing to do. Did you provide an action?")
