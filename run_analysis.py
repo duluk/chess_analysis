@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 
+# TODO:
+# 1. Keep up with best moves in a hash so previous recommendations can be
+#    accessed, such as when needing the suggested move instead of current one.
+# 2. Perhaps keep up with more than just the recommended move so other
+#    information can be accessed later.
+
 import sys
 import argparse
 
 from stockfish import Stockfish
+import chess
 import chess.pgn
 
 STOCKFISH_BIN='/usr/bin/stockfish'
@@ -50,6 +57,9 @@ def best_move(fen):
     if stockfish.is_fen_valid(fen):
         return stockfish.get_best_move()
 
+def get_piece_at_square(board, square):
+    return board.piece_at(square).symbol()
+
 def get_eval(fen):
     e = stockfish.get_evaluation()
     v = e['value']
@@ -86,12 +96,11 @@ if config['time']:
     set_move_time_min(config['time'])
 
 schach = chess.pgn.read_game(pgn)
+board  = schach.board()
 
 if config['eval']:
     last_significant_valuation = 0
-    while schach.next():
-        schach = schach.next()
-        board = schach.board()
+    for move in schach.mainline_moves():
         fen = board.fen()
         set_pos(fen)
         valuation = get_eval(fen)
@@ -99,7 +108,7 @@ if config['eval']:
 
         if is_an_int(valuation):
             if abs(int(valuation) - last_significant_valuation) > VALUATION_THRESHOLD_CP:
-                print(f"Valuation swing at move {move_num}, {schach.move} ({valuation})", end='')
+                print(f"Valuation swing at move {move_num}, {board.san(move)} ({valuation})", end='')
                 if config['show_best']:
                     # This isn't right. This shows the next move in this
                     # position, not what should have been played instead of the
@@ -110,8 +119,11 @@ if config['eval']:
                     print('')  # newline
                 last_significant_valuation = int(valuation)
         else:
-            print(f"{valuation} at move {move_num}, {schach.move}")
+            print(f"{valuation} at move {move_num}, {board.san(move)}")
 
+        board.push(move)
+
+        # TODO: I think this is out of date, mainly the schach variable
         #print_position_info(schach, fen, valuation)
 else:
     print("Nothing to do. Did you provide an action?")
