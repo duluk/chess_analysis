@@ -24,6 +24,7 @@ def parse_arguments():
     parser.add_argument("-e", "--eval", action="store_true", help="Find evaluation swings")
     parser.add_argument("-d", "--depth", help="Depth from which to do analysis")
     parser.add_argument("-t", "--time", help="Set minimum move time for evaluation")
+    parser.add_argument("-s", "--show-best", action="store_true", help="Show best move at swing")
     # Positional arguments if wanted:
     # parser.add_argument("src", help="source")
     # parser.add_argument("dst", help="dest")
@@ -76,6 +77,7 @@ pgn_file = config['file']
 if pgn_file:
     pgn = open(pgn_file)
 else:
+    print("Using the test PGN file")
     pgn = open("test_game.pgn")
 
 if config['depth']:
@@ -98,7 +100,15 @@ if config['eval']:
 
         if is_an_int(valuation):
             if abs(int(valuation) - last_significant_valuation) > VALUATION_THRESHOLD_CP:
-                print(f"Valuation swing at move {move_num}, {schach.move} ({valuation})")
+                print(f"Valuation swing at move {move_num}, {schach.move} ({valuation})", end='')
+                if config['show_best']:
+                    # This isn't right. This shows the next move in this
+                    # position, not what should have been played instead of the
+                    # move that caused this evaluation swing.
+                    #print(f". Engine recommendation: {best_move(fen)}.")
+                    print(f". Engine recommendation: ???")
+                else:
+                    print('')  # newline
                 last_significant_valuation = int(valuation)
         else:
             print(f"{valuation} at move {move_num}, {schach.move}")
