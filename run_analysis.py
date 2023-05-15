@@ -23,6 +23,7 @@ def parse_arguments():
     parser.add_argument("-f", "--file", help="PGN file to parse")
     parser.add_argument("-e", "--eval", action="store_true", help="Find evaluation swings")
     parser.add_argument("-d", "--depth", help="Depth from which to do analysis")
+    parser.add_argument("-t", "--time", help="Set minimum move time for evaluation")
     # Positional arguments if wanted:
     # parser.add_argument("src", help="source")
     # parser.add_argument("dst", help="dest")
@@ -37,6 +38,9 @@ def is_an_int(n):
 
 def set_depth(d):
     stockfish.set_depth(d)
+
+def set_move_time_min(t):
+    stockfish.update_engine_parameters({"Minimum Thinking Time": t})
 
 def set_pos(fen):
     stockfish.set_fen_position(fen)
@@ -76,6 +80,8 @@ else:
 
 if config['depth']:
     set_depth(config['depth'])
+if config['time']:
+    set_move_time_min(config['time'])
 
 schach = chess.pgn.read_game(pgn)
 
