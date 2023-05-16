@@ -42,8 +42,8 @@ def parse_arguments():
     parser.add_argument("-e", "--eval", action="store_true", help="Find evaluation swings")
     parser.add_argument("-l", "--list", action="store_true", help="Live moves")
     parser.add_argument("-n", "--print-fen", action="store_true", help="Print FEN")
-    parser.add_argument("-d", "--depth", default=20, help="Depth from which to do analysis")
-    parser.add_argument("-t", "--time", default=7.0, help="Set minimum move time for evaluation")
+    parser.add_argument("-d", "--depth", help="Depth from which to do analysis")
+    parser.add_argument("-t", "--time", help="Set minimum move time for evaluation")
     parser.add_argument("-s", "--show-best", action="store_true", help="Show best move at swing")
     # Positional arguments if wanted:
     # parser.add_argument("src", help="source")
@@ -100,9 +100,10 @@ else:
     print("Using the test PGN file")
     pgn = open("test_game.pgn")
 
-# With the given defaults in argparse, these will always be defined
-chess.engine.Limit.depth = int(config['depth'])
-chess.engine.Limit.time  = float(config['time'])
+if config['depth']:
+    chess.engine.Limit.depth = int(config['depth'])
+if config['time']:
+    chess.engine.Limit.time = float(config['time'])
 
 print("Config options:")
 print(f"{config}\n")
