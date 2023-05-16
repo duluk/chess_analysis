@@ -15,7 +15,7 @@ import sys
 import os
 import argparse
 
-from stockfish import Stockfish
+#from stockfish import Stockfish
 import chess
 import chess.pgn
 import chess.engine
@@ -33,7 +33,7 @@ VALUATION_THRESHOLD_CP = 1.25*100
 #stockfish = Stockfish(path=STOCKFISH_BIN, parameters={"Threads": 6, "UCI_LimitStrength": "true", "UCI_Elo": 1000})
 
 # Default to max strength
-stockfish = Stockfish(path=STOCKFISH_BIN, parameters={"Threads": 6, "UCI_LimitStrength": "false"})
+#stockfish = Stockfish(path=STOCKFISH_BIN, parameters={"Threads": 6, "UCI_LimitStrength": "false"})
 engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_BIN)
 
 def parse_arguments():
@@ -100,7 +100,9 @@ else:
     print("Using the test PGN file")
     pgn = open("test_game.pgn")
 
-limits = chess.engine.Limit(time=config['time'], depth=config['depth'])
+# With the given defaults in argparse, these will always be defined
+chess.engine.Limit.depth = int(config['depth'])
+chess.engine.Limit.time  = float(config['time'])
 
 print("Config options:")
 print(f"{config}\n")
@@ -123,7 +125,7 @@ if config['eval']:
         # ChessBase.
         board.push(move)
 
-        eval_info = get_eval(engine, board, limits)
+        eval_info = get_eval(engine, board, chess.engine.Limit)
         valuation = str(eval_info['score'].relative)
         engine_valuations[ply] = eval_info
 
