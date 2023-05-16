@@ -106,7 +106,7 @@ if config['time']:
     chess.engine.Limit.time = float(config['time'])
 
 print("Config options:")
-print(f"{config}\n")
+print(config)
 
 schach = chess.pgn.read_game(pgn)
 board  = schach.board()
@@ -175,13 +175,10 @@ if config['eval']:
         else:
             print(f"{valuation} at move {move_num}, {san}")
     engine.close()
-#    exit(1)
 elif config['list']:
     for move in schach.mainline_moves():
         print(f"move = {move}; san = {board.san(move)}")
         board.push(move)
-        if board.outcome():
-            os._exit(1)
     engine.close()
 else:
     print("Nothing to do. Did you provide an action?")
