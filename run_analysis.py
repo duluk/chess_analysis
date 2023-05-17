@@ -155,6 +155,7 @@ if config['eval']:
                     print(f"...: {san} (fen: {board.fen()})")
 
             if eval_diff > VALUATION_THRESHOLD_CP:
+                san = f"...{san}" if turn == chess.BLACK else san
                 print(f"Valuation swing at move {move_num}, {san} ({valuation})", end='')
 
 #                print(f"curr ply: {eval_info} --> (move {san})")
