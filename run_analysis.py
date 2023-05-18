@@ -6,7 +6,6 @@
 # 2. Perhaps keep up with more than just the recommended move so other
 #    information can be accessed later.
 # 3. Add option for which engine to use, though this will likely require a
-#    config file so engines and paths can be provided on a per-system basis
 
 #This could be useful:
 #white_pieces = {'Pawn' : "♙", 'Rook' : "♖", 'Knight' : "♘", 'Bishop' : "♗", 'King' : "♔", 'Queen' : "♕" }
@@ -26,6 +25,13 @@ logging.basicConfig(level=logging.INFO)
 STOCKFISH_BIN='/usr/bin/stockfish'
 
 VALUATION_THRESHOLD_CP = 1.25*100
+INACCURACY_CP = 40
+MISTAKE_CP    = 90
+BLUNDER_CP    = 200
+MOVE_OK    = 0x00
+MOVE_INACCURATE = 0x01
+MOVE_MISTAKE    = 0x02
+MOVE_BLUNDER    = 0x04
 
 # Can set the strength of Stockfish to something more comparable to the ELO of
 # the players in the game so stockfish evaluates based on that ELO. Could be
@@ -91,6 +97,15 @@ def print_position_info(s, f, v):
     print(f"Move made: {s.move}\n")
     print(f"Next Best Move: {best_move(f)}")
 
+def evaluate_centipawns(diff):
+    if eval_diff > BLUNDER_CP:
+        return MOVE_BLUNDER
+    elif eval_diff > MISTAKE_CP:
+        return MOVE_MISTAKE
+    elif eval_diff > INACCURACY_CP:
+        return MOVE_INACCURATE
+
+
 config = parse_arguments()
 
 pgn_file = config['file']
@@ -154,16 +169,24 @@ if config['eval']:
                 else:
                     print(f"...: {san} (fen: {board.fen()})")
 
-            if eval_diff > VALUATION_THRESHOLD_CP:
+            cp_category = evaluate_centipawns(eval_diff)
+            if cp_category == MOVE_INACCURATE:
+                print("Inaccuracy ", end='')
+            elif cp_category == MOVE_MISTAKE:
+                print("Mistake ", end='')
+            elif cp_category == MOVE_BLUNDER:
+                print("Blunder ", end='')
+
+            if cp_category != MOVE_OK:
                 san = f"...{san}" if turn == chess.BLACK else san
-                print(f"Valuation swing at move {move_num}, {san} ({valuation})", end='')
-
-#                print(f"curr ply: {eval_info} --> (move {san})")
-#                if board.ply() > 1: print(f"prev ply: {engine_valuations[ply-1]}")
-#                print(f"curr valuation = {valuation}")
-#                print(f"prev valuation = {previous_valuation}")
-#                print("")
-
+                print(f"at move {move_num}, {san} ({valuation})", end='')
+        
+                # print(f"curr ply: {eval_info} --> (move {san})")
+                # if board.ply() > 1: print(f"prev ply: {engine_valuations[ply-1]}")
+                # print(f"curr valuation = {valuation}")
+                # print(f"prev valuation = {previous_valuation}")
+                # print("")
+        
                 if config['show_best']:
                     # This isn't right. This shows the next move in this
                     # position, not what should have been played instead of the
@@ -172,6 +195,7 @@ if config['eval']:
                     print(f". Engine recommendation: {engine_valuations[ply-2]['pv'][1]}.")
                 else:
                     print('')  # newline
+
             previous_valuation = valuation
         else:
             print(f"{valuation} at move {move_num}, {san}")
