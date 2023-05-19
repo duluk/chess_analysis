@@ -22,7 +22,7 @@ import sys
 import os
 import argparse
 
-#from stockfish import Stockfish
+from stockfish import Stockfish
 import chess
 import chess.pgn
 import chess.engine
@@ -31,6 +31,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 import constants as const
+from   constants import Category
 import config    as conf
 
 class Arguments:
@@ -230,14 +231,14 @@ def is_an_int(n):
         return False
 
 def evaluate_centipawns(cp_diff):
-    if cp_diff > const.BLUNDER_CP:
-        return const.MOVE_BLUNDER
-    elif cp_diff > const.MISTAKE_CP:
-        return const.MOVE_MISTAKE
-    elif cp_diff > const.INACCURACY_CP:
-        return const.MOVE_INACCURATE
+    if cp_diff > const.CP_BLUNDER:
+        return Category.BLUNDER
+    elif cp_diff > const.CP_MISTAKE:
+        return Category.MISTAKE
+    elif cp_diff > const.CP_INACCURACY:
+        return Category.INACCURATE
     else:
-        return const.MOVE_OK
+        return Category.OK
 
 args = Arguments()
 
@@ -295,14 +296,14 @@ if schach.run_centipawn():
                     print(f"...: {san} (fen: {board.fen()})")
 
             cp_category = evaluate_centipawns(eval_diff)
-            if cp_category == const.MOVE_INACCURATE:
+            if cp_category == Category.INACCURATE:
                 print("Inaccuracy ", end='')
-            elif cp_category == const.MOVE_MISTAKE:
+            elif cp_category == Category.MISTAKE:
                 print("Mistake ", end='')
-            elif cp_category == const.MOVE_BLUNDER:
+            elif cp_category == Category.BLUNDER:
                 print("Blunder ", end='')
 
-            if cp_category != const.MOVE_OK:
+            if cp_category != Category.OK:
                 #    print(f"cp_category = {cp_category}")
                 san = f"...{san}" if turn == chess.BLACK else san
                 print(f"at move {move_num}, {san} ({valuation})", end='')
