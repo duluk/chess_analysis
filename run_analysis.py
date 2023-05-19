@@ -14,12 +14,20 @@
 #    still interesting. I'm not sure how significant the different methods are,
 #    but something to consider.
 # 5. Fix the configuration abstraction. It's all wonky.
+# 6. Implement status/progress bar of some sort
+# 7. Try generating a fen for the current position and evaluating that, with
+#    python-chess.
+# 8. Or, what I really need to do is understand how python-chess works. There's
+#    a weird one-off thing when iterating over the game and evaluating positions
+#    and giving the move that triggered the eval. Either I'm confused or the
+#    module is confused/ing. Guessing it's me.
 
 #This could be useful:
 #white_pieces = {'Pawn' : "♙", 'Rook' : "♖", 'Knight' : "♘", 'Bishop' : "♗", 'King' : "♔", 'Queen' : "♕" }
 
 import sys
 import os
+import copy # this prob means I'm doing something wrong
 import argparse
 
 from stockfish import Stockfish
@@ -74,10 +82,13 @@ class Engine_Analysis:
     def moves(self):
         return "Not implemented"
 
-    def get_eval(self, e, b, l):
+    def eval_move(self, m):
         return "Not implemented"
 
     def set_position(self, fen):
+        return "Not implemented"
+
+    def best_move(self):
         return "Not implemented"
 
     def best_move_fen(self, fen):
@@ -108,8 +119,8 @@ class Stockfish_PythonChess(Engine_Analysis):
         self.game = chess.pgn.read_game(self.pgn)
         self.board = self.game.board()
 
-        #print("Config options:")
-        #print(config.args)
+        print("Config options:")
+        print(self.args.args)
 
     @property
     def game(self):
@@ -159,17 +170,56 @@ class Stockfish_PythonChess(Engine_Analysis):
         chess.engine.Limit.depth = int(d)
 
     def set_move_time_min(self, t):
-        chess.engine.Limit.time = float(config['time'])
+        chess.engine.Limit.time = float(t)
 
     def get_piece_at_square(self, square):
         return self.board.piece_at(square).symbol()
 
     # Most of this probably needs to be moved to another function and have this
     # function simply return the results of get_evaluation()
-    def get_eval(self):
+    def eval_move(self, move):
         # TODO: what is the right/best way to handle the `chess.engine.Limit`
         # thing? Is there no way to configure this per instance of engine?
         return self.engine.analyse(self.board, chess.engine.Limit)
+
+    def best_move(self, b):
+        # Sometimes need to evaluate from the previous position, so allow user
+        # to pass in the board to be used for evaluation
+        if b == None:
+            b = self.board
+        try:
+            bm = str(b.san(self.engine.play(b, chess.engine.Limit).move))
+            return bm
+        except:
+            return None
+
+    def evaluate_centipawns(self, curr_score, prev_score):
+        # This is the evaluation of a board after the move has been played. So,
+        # board.turn will be the player whose turn it is next, not the who made
+        # the move we're evaluating. board.turn is a bool where True = White
+        # and False = Black (don't ask me why), so to get the previous player
+        # we just negate the player whose turn is next.
+        color_played = not self.board.turn
+
+        # TODO: does this need to be absolute value?
+        #delta = abs(abs(curr_score) - abs(prev_score))
+        delta = abs(curr_score - prev_score)
+#        print(f"curr_score = {curr_score}; prev_score = {prev_score}; delta = {delta}")
+
+        # If White or Black are improving, it's probably not a blunder.
+        if color_played == chess.WHITE and curr_score > prev_score:
+            return Category.OK
+        if color_played == chess.BLACK and curr_score < prev_score:
+            return Category.OK
+
+        if delta > const.CP_BLUNDER:
+            return Category.BLUNDER
+        elif delta > const.CP_MISTAKE:
+            return Category.MISTAKE
+        elif delta > const.CP_INACCURACY:
+            return Category.INACCURATE
+        else:
+            return Category.OK
 
     def print_position_info(self, s, f, v):
         return "Not implemented"
@@ -220,8 +270,8 @@ class Stockfish_Stockfish(Engine_Analysis):
         engine.set_fen_position(fen)
 
     def best_move_fen(fen):
-        if stockfish.is_fen_valid(fen):
-            return stockfish.get_best_move()
+        if engine.is_fen_valid(fen):
+            return engine.get_best_move()
 
 def is_an_int(n):
     try:
@@ -229,16 +279,6 @@ def is_an_int(n):
         return True
     except ValueError:
         return False
-
-def evaluate_centipawns(cp_diff):
-    if cp_diff > const.CP_BLUNDER:
-        return Category.BLUNDER
-    elif cp_diff > const.CP_MISTAKE:
-        return Category.MISTAKE
-    elif cp_diff > const.CP_INACCURACY:
-        return Category.INACCURATE
-    else:
-        return Category.OK
 
 args = Arguments()
 
@@ -250,10 +290,16 @@ engine_valuations = {}
 if schach.run_centipawn():
     previous_valuation = 0
     for move in schach.moves():
+    #game_node = schach.game()
+    #while not game_node.is_end():
+        # At this point we are at the last move, or before the move stored in
+        # move has actually been made (pushed) on the board, so anything about
+        # the board is for the previous move (or starting position on the first
+        # time)
+
         # Make each of these a getter that uses board; so schach.san(move) would be
         # implemented as "return self.board.san(move)"
-        san = schach.board.san(move)
-        turn = schach.board.turn
+#        san = schach.board.san(move)
         move_num = schach.board.fullmove_number # i.e., not the ply
         ply = schach.board.ply()
 
@@ -261,11 +307,35 @@ if schach.run_centipawn():
         # move, like SAN and turn and whatnot, but if I don't put this call here
         # the evaluated position is somehow off by one based on what I see in 
         # ChessBase.
-        schach.board.push(move)
+        # Put the move on the board so that board represents the move just made
+        # (the move we're "on"). This makes it the next player's turn, so
+        # everything is from the perspective of the opposite color from who
+        # just made this move. So we call san_and_push to retrieve the san of
+        # the move just made while playing the move on the board.
+        prev_board = copy.deepcopy(schach.board)
+        san = schach.board.san_and_push(move)
+#        print(f"prev_board = {prev_board.__repr__()}")
+#        print(f"curr_Board = {schach.board.__repr__()}")
+
+        # color who made the move just pushed to board. Using prev_board because
+        # we just pushed the move, so we're peeking at the previous move.
+        color_played = prev_board.turn
+
+        # color whose turn it is next, the perspective everything is from now
+        color_next   = schach.board.turn
 
         #eval_info = get_eval(engine, board, chess.engine.Limit)
-        eval_info = schach.get_eval()
-        valuation = str(eval_info['score'].relative)
+        eval_info = schach.eval_move(move)
+
+        # This valuation is the valuation of the position after the move just
+        # played, but it is from the perspective of the person who did NOT make
+        # the move, so I think we just need to negate it to make it look like
+        # the valuation from the player who made the move.
+        #valuation = str(eval_info['score'].relative)
+        # Normalize on white's perspective
+        valuation = str(eval_info['score'].white().score())
+#        print(f"valuation = {valuation}")
+#        print(f"rel score = {eval_info['score']}")
         engine_valuations[ply] = eval_info
 
         if is_an_int(valuation):
@@ -273,29 +343,32 @@ if schach.run_centipawn():
 
             # TODO: pretty sure this is wrong. Relative score is relative to each player,
             # so a positive score is good for that player, and negative is bad. It applies
-            # to both white and black.
+            # to both white and black. (NOTE: see the above comment for valuation)
             # Keep consistent with White eval: + good for White; - good for Black. The way
             # it currently works, + is good for the current color; - for the other. So a +
             # score for Black means Black is better. A - score for Black means that White
             # is better. But we generally use - for favoring Black and + favoring White.
-            if schach.board.turn == chess.BLACK:
-                valuation = -valuation
+#            if schach.board.turn == chess.BLACK:
 
-            eval_diff = abs(valuation - previous_valuation)
+            # The valuation given is from the perspective of the player's whose turn it
+            # is next, not the one who just made the move we are evaluating. I would
+            # prefer it look like the perspective of the person who made the move, so I
+            # am negating it.
+#            valuation = -valuation
 
             if schach.args.args['list']:
-                if turn == chess.WHITE: print(f"{move_num}: ", end="")
+                if color_played == chess.WHITE: print(f"{move_num}: ", end="")
                 print(f"{san} ", end="")
-                if turn == chess.BLACK: print("")
+                if color_played == chess.BLACK: print("")
 
             # For printing the FEN, each move on separate line
             if schach.args.args['print_fen']:
-                if turn == chess.WHITE:
+                if color_played == chess.WHITE:
                     print(f"{move_num}:  {san} (fen: {board.fen()})")
                 else:
                     print(f"...: {san} (fen: {board.fen()})")
 
-            cp_category = evaluate_centipawns(eval_diff)
+            cp_category = schach.evaluate_centipawns(valuation, previous_valuation)
             if cp_category == Category.INACCURATE:
                 print("Inaccuracy ", end='')
             elif cp_category == Category.MISTAKE:
@@ -305,7 +378,7 @@ if schach.run_centipawn():
 
             if cp_category != Category.OK:
                 #    print(f"cp_category = {cp_category}")
-                san = f"...{san}" if turn == chess.BLACK else san
+                san = f"...{san}" if color_played == chess.BLACK else san
                 print(f"at move {move_num}, {san} ({valuation})", end='')
         
                 # print(f"curr ply: {eval_info} --> (move {san})")
@@ -319,13 +392,24 @@ if schach.run_centipawn():
                     # position, not what should have been played instead of the
                     # move that caused this evaluation swing.
                     #print(f". Engine recommendation: {best_move(fen)}.")
-                    print(f". Engine recommendation: {engine_valuations[ply-2]['pv'][1]}.")
+
+                    # It's likely this isn't the best move. python-chess is weird.
+                    print(f". Engine recommendation: {schach.best_move(prev_board)}.")
+                    #print(f". Engine recommendation: {engine_valuations[ply-2]['pv'][1]}.")
                 else:
                     print('')  # newline
 
             previous_valuation = valuation
         else:
-            print(f"{valuation} at move {move_num}, {san}")
+            valuation = str(eval_info['score'].white().mate())
+            print(f"#{valuation} at move {move_num}, {san}")
+
+            # Make up something totally arbitrary but showing the significance
+            # of mate possibility, giving higher value to lower numbers (mate
+            # in 1 is almost infinitely better than mate in 3)
+            previous_valuation = const.MATE_IN_ONE_CP-(int(valuation)*const.MATE_CP_SCALE)
+#        input("press Enter to continue")
+#        schach.board.push(curr_move)
     schach.engine.close()
 elif schach.run_list_moves():
     for move in schach.moves():
