@@ -58,12 +58,14 @@ class Arguments:
 
     def parse_arguments(self):
         self.parser.add_argument("-f", "--file", help="PGN file to parse")
-        self.parser.add_argument("-e", "--eval", action="store_true", help="Find evaluation swings")
+        self.parser.add_argument("-r", "--run-eval", action="store_true", help="Find evaluation swings")
         self.parser.add_argument("-l", "--list", action="store_true", help="Live moves")
+        self.parser.add_argument("-e", "--elo", help="Set engine ELO")
         self.parser.add_argument("-n", "--print-fen", action="store_true", help="Print FEN")
         self.parser.add_argument("-d", "--depth", help="Depth from which to do analysis")
         self.parser.add_argument("-t", "--time", help="Set minimum move time for evaluation")
-        self.parser.add_argument("-s", "--show-best", action="store_true", help="Show best move at swing")
+        self.parser.add_argument("-s", "--hash-size", help="Set engine hash size in MB")
+        self.parser.add_argument("-b", "--show-best", action="store_true", help="Show best move at swing")
         # Positional arguments if wanted:
         # self.parser.add_argument("src", help="source")
         # self.parser.add_argument("dst", help="dest")
@@ -123,12 +125,21 @@ class Stockfish_PythonChess(Engine_Analysis):
             self.set_depth(self.args.args['depth'])
         if self.args.args['time']:
             self.set_move_time_min(self.args.args['time'])
+        if self.args.args['elo']:
+            self.set_elo(self.args.args['elo'])
+        if self.args.args['hash_size']:
+            self.set_hash(self.args.args['hash_size'])
+
+        self.set_threads(6)
 
         self.game = chess.pgn.read_game(self.pgn)
         self.board = self.game.board()
 
         print("Config options:")
         print(self.args.args)
+        print("Engine options:")
+        print(self.engine.options)
+#        print(f"chess.engine.Limit: {chess.engine.Limit}")
 
     @property
     def game(self):
@@ -154,31 +165,115 @@ class Stockfish_PythonChess(Engine_Analysis):
     def engine(self, value):
         self._engine = value
 
+    @property
+    def san(self):
+        return self._san
+
+    @san.setter
+    def san(self, value):
+        self._san = value
+
+    @property
+    def prev_board(self):
+        return self._prev_board
+
+    @prev_board.setter
+    def prev_board(self, value):
+        self._prev_board = value
+
+    # color who made the move just pushed to board. Using prev_board because
+    # we have pushed the move, so we're peeking at the previous move.
+    @property
+    def color_played(self):
+        return self._color_played
+
+    @color_played.setter
+    def color_played(self, value):
+        self._color_played = value
+
+    def fullmove_number(self):
+        return self.board.fullmove_number
+
+    def fen(self):
+        return self.board.fen()
+
+    def ply(self):
+        return self.board.ply()
+
+    def san_and_push(self, move):
+        # Copy the board prior to making the move so we can reference it later,
+        # especially for calcluating what the best move was for the current
+        # position (which means evaluating the previous position). A copy is
+        # required here because it seems that Python (at least in this case) is
+        # simply copying the reference, as without the copy changing `board`
+        # also changes `prev_board`. Using deepcopy just to be safe.
+        self.prev_board = copy.deepcopy(self.board)
+        self.color_played = self.prev_board.turn
+        self.san = self.board.san(move)
+
+        return self.board.san_and_push(move)
+
     def moves(self):
         return self.game.mainline_moves()
 
     def run_centipawn(self):
         #print(f"run_centipawn(self) - {self.args.args['eval']}")
-        return self.args.args['eval'] == True
+        return self.args.args['run_eval'] == True
 
     def run_list_moves(self):
         #print(f"run_list_moves(self) - {self.args.args['list']}")
         return self.args.args['list'] == True
 
     def set_depth(self, d):
-        # I don't know if this is python-chess or Stockfish
-        #try:
-        #    self.engine.configure({"depth": d})
-        #except:
-        #    print("Invalid option. Available options:")
-        #    print(self.engine.options["Hash"])
-        #    os._exit(1)
-
         # This should work with python-chess
         chess.engine.Limit.depth = int(d)
 
     def set_move_time_min(self, t):
         chess.engine.Limit.time = float(t)
+
+    def set_elo(self, elo):
+        elo = int(elo)
+        elo_min = self.engine.options['UCI_Elo'].min
+        elo_max = self.engine.options['UCI_Elo'].max
+        if elo < elo_min or elo > elo_max:
+            print(f"Invalid value for ELO, {elo}: must be between {elo_min} and {elo_max}.")
+            os._exit(1)
+
+        # Set LimitStrength to ensure Elo is actually applied
+        try:
+            self.engine.configure({"UCI_LimitStrength": True})
+        #    print(f"Limit strength: {self.engine.options['UCI_LimitStrength']}")
+        except:
+            print("Invalid option UCI_LimitStrength. Available options:")
+            print(self.engine.options)
+            os._exit(1)
+
+        try:
+            self.engine.configure({"UCI_Elo": elo})
+        #    print(f"Engine elo: {self.engine.options['UCI_Elo']}")
+        except:
+            print("Invalid option, or value, UCI_Elo. Available options:")
+            print(self.engine.options)
+            os._exit(1)
+
+    def set_hash(self, size):
+        size = int(size)
+        try:
+            self.engine.configure({"Hash": size})
+        #    print(f"Hash size: {self.engine.options['Hash']}")
+        except:
+            print("Invalid option Hash. Available options:")
+            print(self.engine.options)
+            os._exit(1)
+        
+    def set_threads(self, threads):
+        threads = int(threads)
+        try:
+            self.engine.configure({"Threads": threads})
+        except:
+            print("Invalid option, or value, Threads. Available options:")
+            print(self.engine.options)
+            os._exit(1)
 
     def get_piece_at_square(self, square):
         return self.board.piece_at(square).symbol()
@@ -188,11 +283,13 @@ class Stockfish_PythonChess(Engine_Analysis):
         # thing? Is there no way to configure this per instance of engine?
         return self.engine.analyse(self.board, chess.engine.Limit)
 
-    def best_move(self, b):
-        # Sometimes need to evaluate from the previous position, so allow user
-        # to pass in the board to be used for evaluation.
+    def best_move(self, b=None):
+        # Typically we are going to analyze the previous position for the best
+        # move because we want to know what move should have been played
+        # instead of the one that was. But we allow a different board to be
+        # passed in. (b=self.prev_board doesn't work as default value)
         if b == None:
-            b = self.board
+            b = self.prev_board
         try:
             bm = str(b.san(self.engine.play(b, chess.engine.Limit).move))
             return bm
@@ -200,22 +297,15 @@ class Stockfish_PythonChess(Engine_Analysis):
             return None
 
     def evaluate_centipawns(self, curr_score, prev_score):
-        # This is the evaluation of a board after the move has been played. So,
-        # board.turn will be the player whose turn it is next, not the who made
-        # the move we're evaluating. board.turn is a bool where True = White
-        # and False = Black (don't ask me why), so to get the previous player
-        # we just negate the player whose turn is next.
-        color_played = not self.board.turn
-
         # TODO: does this need to be absolute value?
         #delta = abs(abs(curr_score) - abs(prev_score))
         delta = abs(curr_score - prev_score)
 #        print(f"curr_score = {curr_score}; prev_score = {prev_score}; delta = {delta}")
 
         # If White or Black are improving, it's probably not a blunder.
-        if color_played == chess.WHITE and curr_score > prev_score:
+        if self.color_played == chess.WHITE and curr_score > prev_score:
             return Category.OK
-        if color_played == chess.BLACK and curr_score < prev_score:
+        if self.color_played == chess.BLACK and curr_score < prev_score:
             return Category.OK
 
         if delta > const.CP_BLUNDER:
@@ -291,8 +381,6 @@ schach = Stockfish_PythonChess(args)
 
 if schach.run_centipawn():
     previous_valuation = 0
-    # TODO: there are a lot of calls to `schach.board` - these should be
-    # methods in the class and the class calls the method on the board object.
     for move in schach.moves():
         # At this point we are at the previous move, or before the move stored in
         # `move` has actually been made (pushed) on the board, so anything about
@@ -301,27 +389,15 @@ if schach.run_centipawn():
 
         # Get the move number (as opposed to ply) before making the move (push)
         # on the board, as otherwise the number will be off.
-        move_num = schach.board.fullmove_number
-
-        # Copy the board prior to making the move so we can reference it later,
-        # especially for calcluating what the best move was for the current
-        # position (which means evaluating the previous position). A copy is
-        # required here because it seems that Python (at least in this case) is
-        # simply copying the reference, as without the copy changing `board`
-        # also changes `prev_board`. Using deepcopy just to be safe.
-        prev_board = copy.deepcopy(schach.board)
+        move_num = schach.fullmove_number()
 
         # Put the move on the board so that board represents the move just made
         # (the move we're "on"). This makes it the next player's turn, so
         # everything is from the perspective of the opposite color from who
         # just made this move. So we call san_and_push to retrieve the san of
         # the move just made while playing the move on the board.
-        san = schach.board.san_and_push(move)
-        ply = schach.board.ply()
-
-        # color who made the move just pushed to board. Using prev_board because
-        # we just pushed the move, so we're peeking at the previous move.
-        color_played = prev_board.turn
+        san = schach.san_and_push(move)
+        ply = schach.ply()
 
         # Get the evaluation of the position of the move just played
         eval_info = schach.eval_move(move)
@@ -338,16 +414,16 @@ if schach.run_centipawn():
             # This may go bye bye, but for now I wanted to be able to list the
             # moves along with the evaluation.
             if schach.args.args['list']:
-                if color_played == chess.WHITE: print(f"{move_num}: ", end="")
+                if schach.color_played == chess.WHITE: print(f"{move_num}: ", end="")
                 print(f"{san} ", end="")
-                if color_played == chess.BLACK: print("")
+                if schach.color_played == chess.BLACK: print("")
 
             # For printing the FEN, each move on separate line
             if schach.args.args['print_fen']:
-                if color_played == chess.WHITE:
-                    print(f"{move_num}:  {san} (fen: {board.fen()})")
+                if schach.color_played == chess.WHITE:
+                    print(f"{move_num}:  {san} (fen: {schach.fen()})")
                 else:
-                    print(f"...: {san} (fen: {board.fen()})")
+                    print(f"...: {san} (fen: {schach.fen()})")
 
             cp_category = schach.evaluate_centipawns(valuation, previous_valuation)
             if cp_category == Category.INACCURATE:
@@ -358,11 +434,11 @@ if schach.run_centipawn():
                 print("Blunder ", end='')
 
             if cp_category != Category.OK:
-                san = f"...{san}" if color_played == chess.BLACK else san
+                san = f"...{san}" if schach.color_played == chess.BLACK else san
                 print(f"at move {move_num}, {san} ({valuation})", end='')
         
                 if schach.args.args['show_best']:
-                    print(f". Engine suggests {schach.best_move(prev_board)}.")
+                    print(f". Engine suggests {schach.best_move()}.")
                 else:
                     print('')  # newline
 
@@ -373,7 +449,10 @@ if schach.run_centipawn():
 
             # Make up something totally arbitrary but showing the significance
             # of mate possibility, giving higher value to lower numbers (mate
-            # in 1 is almost infinitely better than mate in 3)
+            # in 1 is almost infinitely better than mate in 3). Of course just
+            # subtracting valuation from MATE_IN_ONE_CP works also, but not
+            # quite as different from mate in 1 to mate in 2.
+            # e.g., eval['score'].white().score(mate_score=const.MATE_IN_ONE_CP)
             previous_valuation = const.MATE_IN_ONE_CP-(int(valuation)*const.MATE_CP_SCALE)
     schach.engine.close()
 elif schach.run_list_moves():
