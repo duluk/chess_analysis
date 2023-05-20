@@ -50,8 +50,17 @@ import constants as const
 from   constants import Category
 import config    as conf
 
+if not const.LOG_DIR:
+    const.LOG_DIR = '.'
+elif not os.path.exists(const.LOG_DIR):
+    try:
+        os.mkdir(const.LOG_DIR)
+    except OSError as error:
+        print(error)
+        os._exit(1)
+
 date_str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-logging.basicConfig(filename=f"analysis.debug.{date_str}.log", level=logging.DEBUG)
+logging.basicConfig(filename=f"{const.LOG_DIR}/analysis.debug.{date_str}.log", level=logging.DEBUG)
 
 class Arguments:
     def __init__(self):
