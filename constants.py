@@ -1,5 +1,7 @@
 from enum import Enum
 
+LOG_DIR = 'logs'
+
 VALUATION_THRESHOLD_CP = 1.25*100
 CP_INACCURACY = 40
 CP_MISTAKE    = 90
