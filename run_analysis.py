@@ -37,9 +37,9 @@ import sys
 import os
 import copy
 import argparse
+import datetime
 
 import logging
-logging.basicConfig(level=logging.INFO)
 
 from stockfish import Stockfish
 import chess
@@ -49,6 +49,9 @@ import chess.engine
 import constants as const
 from   constants import Category
 import config    as conf
+
+date_str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+logging.basicConfig(filename=f"analysis.debug.{date_str}.log", level=logging.DEBUG)
 
 class Arguments:
     def __init__(self):
@@ -64,7 +67,7 @@ class Arguments:
         self.parser.add_argument("-n", "--print-fen", action="store_true", help="Print FEN")
         self.parser.add_argument("-d", "--depth", help="Depth from which to do analysis")
         self.parser.add_argument("-t", "--time", help="Set minimum move time for evaluation")
-        self.parser.add_argument("-s", "--hash-size", help="Set engine hash size in MB")
+        self.parser.add_argument("-s", "--hash-size", default=2048, help="Set engine hash size in MB")
         self.parser.add_argument("-b", "--show-best", action="store_true", help="Show best move at swing")
         # Positional arguments if wanted:
         # self.parser.add_argument("src", help="source")
@@ -282,6 +285,7 @@ class Stockfish_PythonChess(Engine_Analysis):
         # TODO: what is the right/best way to handle the `chess.engine.Limit`
         # thing? Is there no way to configure this per instance of engine?
         return self.engine.analyse(self.board, chess.engine.Limit)
+        #return self.engine.analysis(self.board, chess.engine.Limit)
 
     def best_move(self, b=None):
         # Typically we are going to analyze the previous position for the best
@@ -297,12 +301,24 @@ class Stockfish_PythonChess(Engine_Analysis):
             return None
 
     def evaluate_centipawns(self, curr_score, prev_score):
+        # This is what the python-chess docs say about comparing two
+        # consecutive scores of the players:
+        #
+        # "Scores have a total order, but it makes little sense to compute the
+        # difference between two scores. For example, going from Cp(-100) to
+        # Cp(+100) is much more significant than going from Cp(+300) to Cp(+500).
+        # It is better to compute differences of the expectation values for the
+        # outcome of the game (based on winning chances and drawing chances)."
+        # https://python-chess.readthedocs.io/en/latest/engine.html#chess.engine.Score
+
         # TODO: does this need to be absolute value?
         #delta = abs(abs(curr_score) - abs(prev_score))
         delta = abs(curr_score - prev_score)
 #        print(f"curr_score = {curr_score}; prev_score = {prev_score}; delta = {delta}")
 
-        # If White or Black are improving, it's probably not a blunder.
+        # If White or Black are improving, it's probably not a blunder. This is
+        # an attempt at addressing the documentation's warning above about
+        # comparing scores.
         if self.color_played == chess.WHITE and curr_score > prev_score:
             return Category.OK
         if self.color_played == chess.BLACK and curr_score < prev_score:
