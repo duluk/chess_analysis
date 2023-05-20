@@ -18,3 +18,4 @@ class Category(Enum):
     INACCURATE = 0x02
     MISTAKE    = 0x04
     BLUNDER    = 0x08
+    MATE       = 0x10
