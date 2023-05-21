@@ -28,6 +28,22 @@
 # 10. Improve evaluation of centipawn from move to move.
 # 11. Add comparison of current move to best engine move, which is what the
 #     Centipawn Analysis in ChessBase does.
+# 12. Consider creating a board object of the whole game - before running any
+#     analysis, just go through the whole game (mainline_moves()) and push each
+#     move onto a board and then reference that board for certain moves (like
+#     seeing what the next move is in order to know if the current move is a
+#     sacrifice or something)
+# 13. Two passes is also a consideration. Pass one would be engine analysis
+#     and assigning values to moves - player and computer suggested. I need a
+#     good way to handle this since the player move can be analyzed only after
+#     the move has been made, but the computer analysis is done before - maybe
+#     keeping trackof this in a hash will work...record the computer suggested
+#     move, then analyze the actual move. This could be done on the same pass.
+#     Analyze the position on the baord and record the score of the player move
+#     and what will be the best suggestion for the next move. This is pass 1.
+#     Then on pass2 go back over the hash or move_stack and do some basic
+#     statistical analysis of the results. See the following chess.com page:
+#     https://support.chess.com/article/2965-how-are-moves-classified-what-is-a-blunder-or-brilliant-and-etc
 
 
 #This could be useful:
