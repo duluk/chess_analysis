@@ -73,17 +73,19 @@ logging.basicConfig(filename=f"{const.LOG_DIR}/analysis.debug.{date_str}.log", l
 def get_game(pgn):
     return chess.pgn.read_game(open(pgn))
 
-def evaluate_centipawns(turn_played, pov_curr_score, pov_prev_score):
+def evaluate_player_cp(ply_analysis, prev_ply_analysis, turn_played):
+    pov_curr_score = ply_analysis['player_eval']
     if pov_curr_score.is_mate():
-        # This doesn't seem like the right way to do this
-        #curr_score = chess.engine.Cp(pov_curr_score.score(mate_score=const.MATE_IN_ONE_CP)).score()
         curr_score = pov_curr_score.score(mate_score=const.MATE_IN_ONE_CP)
 #        return Category.MATE
     else:
         curr_score = pov_curr_score.score()
 
+    # If None then this is the first move, for which there is no previous move.
+    # The general evaluation prior to making the first move is usually around
+    # 30 centipawns; setting it to 15 as a hedge of sorts.
+    pov_prev_score = prev_ply_analysis['player_eval'] if prev_ply_analysis else chess.engine.Cp(15)
     if pov_prev_score.is_mate():
-        # This doesn't seem like the right way to do this
         prev_score = pov_prev_score.score(mate_score=const.MATE_IN_ONE_CP)
 #        return Category.MATE
     else:
@@ -93,8 +95,8 @@ def evaluate_centipawns(turn_played, pov_curr_score, pov_prev_score):
 #        print(f"curr_score = {curr_score}; prev_score = {prev_score}; delta = {delta}")
 
     # If White or Black are improving, it's probably not a blunder. This is
-    # an attempt at addressing the documentation's warning above about
-    # comparing scores.
+    # an attempt at addressing the documentation's warning about
+    # comparing player scores from move to move.
     if turn_played == chess.WHITE and curr_score > prev_score:
         return Category.OK
     if turn_played == chess.BLACK and curr_score < prev_score:
@@ -110,6 +112,36 @@ def evaluate_centipawns(turn_played, pov_curr_score, pov_prev_score):
         return Category.INACCURATE
     else:
         return Category.OK
+
+def evaluate_engine_cp(engine_score, player_score):
+    engine_score = engine_score.score(mate_score=25000)
+    player_score = player_score.score(mate_score=25000)
+
+    delta = engine_score - player_score
+#    if delta > 20000:
+#        return Category.MATE
+    if delta > const.CP_BLUNDER:
+        return Category.BLUNDER
+    elif delta > const.CP_MISTAKE:
+        return Category.MISTAKE
+    elif delta > const.CP_INACCURACY:
+        return Category.INACCURATE
+    else:
+        return Category.OK
+
+#def evaluate_category(player_category, engine_category, player_san, engine_san, player_color):
+#    if category == Category.INACCURATE:
+#        print("Inaccuracy ", end='')
+#    elif category == Category.MISTAKE:
+#        print("Mistake ", end='')
+#    elif category == Category.BLUNDER:
+#        print("Blunder ", end='')
+#    elif category == Category.MATE:
+#        print(f"Mate in {score.mate()} ", end='')
+#
+#    if category != Category.OK:
+#        san = f"...{san}" if played == chess.BLACK else san
+#        print(f"at move {move_num}, {san} (p:{prev_score},c:{score}; depth={depth}) (player eval)")
 
 async def main() -> None:
     _, engine = await chess.engine.popen_uci('/usr/bin/stockfish')
@@ -167,75 +199,99 @@ async def main() -> None:
     game = get_game(pgn_file)
     #board_complete = Complete_Board(game)
 
-    # Pass 1 - gather stats
-    first_pass = []
-    board = game.board()
-    print("First pass analysis...")
-    # This isn't right. The scores don't actually match the moves - at least
-    # for the player; it's the score for the board before the move is made.
-    for move in game.mainline_moves():
-        # The issue is what does the Score represent? It (presumably)
-        # represents the result of the player's move. There would have to be
-        # another analysis to evaluate the engine's move.
+    game_white = game.headers['White']
+    game_black = game.headers['Black']
+    game_date = game.headers['Date']
+
+    print(f"Analyzing game between {game_white} and {game_black} on {game_date}")
+
+    game_analysis = []
+    node = game.end()
+    while not node == game.root():
+        prev_node = node.parent
+        board = prev_node.board()
+        move = node.move
         analysis = await engine.analyse(board, chess.engine.Limit)
+
         info = {
                 'analysis': analysis,
                 'player_move': move,
                 'player_san': board.san(move),
                 'best_move': board.san(analysis['pv'][0]),
+                'best_eval': analysis['score'].white(),
+                'player_color': board.turn,
+                'move_num':  board.fullmove_number,
                }
-        # Push engine move and evaluate that; then push player move to
-        # continue. This may not be the right way.
-        board.push(analysis['pv'][0])
-        analysis = await engine.analyse(board, chess.engine.Limit)
-        info['best_move_analysis'] = analysis
-        board.pop()
-        board.push(move)
-        first_pass.append(info)
 
-    for ply in first_pass:
-        print(f"{ply['player_san']}:")
-        print(f"\tPlayer score: {ply['analysis']['score'].white()}")
-        print(f"\tBest move: {ply['best_move']}")
-        print(f"\tBest move score: {ply['best_move_analysis']['score'].white()}")
-
-    os._exit(1)
-    board = game.board()
-    prev_score = chess.engine.Cp(0)
-    for move in game.mainline_moves():
-        played = board.turn
-        move_num = board.fullmove_number
-        san = board.san_and_push(move)
-
-        info = await engine.analyse(board, chess.engine.Limit)
-        score = info['score'].white()
-        depth = info['depth']
-        #print(f"Score after {san}: {score}")
-
-        cp_category = evaluate_centipawns(played, score, prev_score)
-
-        # If want "Mate in ..." listed, uncomment this
-#        if score.is_mate():
-#            cp_category = Category.MATE
-
-        if cp_category == Category.INACCURATE:
-            print("Inaccuracy ", end='')
-        elif cp_category == Category.MISTAKE:
-            print("Mistake ", end='')
-        elif cp_category == Category.BLUNDER:
-            print("Blunder ", end='')
-        elif cp_category == Category.MATE:
-            print(f"Mate in {score.mate()} ", end='')
-
-        if cp_category != Category.OK:
-            san = f"...{san}" if played == chess.BLACK else san
-            print(f"at move {move_num}, {san} (p:{prev_score},c:{score}; depth={depth})")
-        
-        if score.is_mate():
-            # Again, need to figure out the right way to do this
-            prev_score = chess.engine.Cp(score.score(mate_score=const.MATE_IN_ONE_CP))
+        if move == analysis['pv'][0]:
+            # Player made best move; no need to eval again
+            #info['player_eval'] = analysis['score'].white().score(mate_score=25000)
+            info['player_eval'] = analysis['score'].white()
         else:
-            prev_score = score
+            board.push(move)
+            analysis = await engine.analyse(board, chess.engine.Limit)
+
+            #info['player_eval'] = analysis['score'].white().score(mate_score=25000)
+            info['player_eval'] = analysis['score'].white()
+
+            board.pop()
+
+        # May need to format this later (cf. eval_human in annotator)
+        info['player_comment'] = info['player_eval']
+        node.comment = str(info['player_eval'])
+
+        game_analysis.append(info)
+        node = prev_node
+
+#    for ply in reversed(game_analysis):
+#        print(f"{ply['player_san']}:")
+#        print(f"\tPlayer eval: {ply['player_eval']}")
+#        print(f"\tBest move: {ply['best_move']}")
+#        print(f"\tBest move score: {ply['best_eval']}")
+
+#    prev_ply = None
+    for ply in reversed(game_analysis):
+        san = ply['player_san']
+        best_san = ply['best_move']
+        move_num = ply['move_num']
+        played = ply['player_color']
+        player_score = ply['player_eval']
+        engine_score = ply['best_eval']
+        depth = ply['analysis']['depth']
+#        prev_score = prev_ply['player_eval'] if prev_ply else chess.engine.Cp(0)
+
+#        player_cp_category = evaluate_player_cp(ply, prev_ply, played)
+        engine_cp_category = evaluate_engine_cp(engine_score, player_score)
+
+#        if player_cp_category != Category.OK:
+#            print("PvP ", end='')
+#            if player_cp_category == Category.INACCURATE:
+#                print("Inaccuracy ", end='')
+#            elif player_cp_category == Category.MISTAKE:
+#                print("Mistake ", end='')
+#            elif player_cp_category == Category.BLUNDER:
+#                print("Blunder ", end='')
+#            elif player_cp_category == Category.MATE:
+#                print(f"Mate in {player_score.mate()} ", end='')
+#
+#            san = f"...{san}" if played == chess.BLACK else san
+#            print(f"at move {move_num}, {san} (p:{prev_score},c:{player_score}; depth={depth})")
+
+        if engine_cp_category != Category.OK:
+            print("PvE ", end='')
+            if engine_cp_category == Category.INACCURATE:
+                print("Inaccuracy ", end='')
+            elif engine_cp_category == Category.MISTAKE:
+                print("Mistake ", end='')
+            elif engine_cp_category == Category.BLUNDER:
+                print("Blunder ", end='')
+            elif engine_cp_category == Category.MATE:
+                print(f"Mate in {engine_score.mate()} ", end='')
+
+            san = f"...{san}" if played == chess.BLACK else san
+            print(f"at move {move_num}, {san}. Best move: {best_san} (p:{player_score},b:{engine_score})")
+
+#        prev_ply = ply
 
     await engine.quit()
 
