@@ -15,6 +15,41 @@ import chess.engine
 import constants as const
 from constants import Category
 
+class Complete_Board:
+    def __init__(self, game):
+        self.game = game
+        self.board = game.board()
+        self.san = []
+        self.push_all_moves
+
+    def push_all_moves(self):
+        for move in self.game.mainline_moves():
+            # This will be zero-based of course, but that's consistent with how
+            # the move_stack works anyway, so a given ply is still accessible
+            # with board.ply()-1
+            self.san.append(self.board.san_and_push(move))
+
+        return board
+
+    def ply(self, n, san_or_uci=True):
+        # san_or_uci = True for san; False for uci
+        if san_or_uci:
+            return self.san[n-1]
+        else:
+            return self.board.move_stack[n-1].uci()
+
+    # This may not be used. Depends on how this class ends up being used.
+    # Probably more about random access (the ply method) than keeping this
+    # object in sync with some other board that is being pushed to as each move
+    # is analyzed...but that may not be how I end up doing things.
+    def next_ply(self, san_or_uci=True):
+        # san_or_uci = True for san; False for uci
+        curr_ply = self.board.ply()
+        if san_or_uci:
+            return self.san[curr_ply-1]
+        else:
+            return self.board.move_stack[curr_ply-1].uci()
+
 if not const.LOG_DIR:
     const.LOG_DIR = '.'
 elif not os.path.exists(const.LOG_DIR):
@@ -130,16 +165,48 @@ async def main() -> None:
 #        os._exit(1)
 
     game = get_game(pgn_file)
-    board = game.board()
+    #board_complete = Complete_Board(game)
 
+    # Pass 1 - gather stats
+    first_pass = []
+    board = game.board()
+    print("First pass analysis...")
+    # This isn't right. The scores don't actually match the moves - at least
+    # for the player; it's the score for the board before the move is made.
+    for move in game.mainline_moves():
+        # The issue is what does the Score represent? It (presumably)
+        # represents the result of the player's move. There would have to be
+        # another analysis to evaluate the engine's move.
+        analysis = await engine.analyse(board, chess.engine.Limit)
+        info = {
+                'analysis': analysis,
+                'player_move': move,
+                'player_san': board.san(move),
+                'best_move': board.san(analysis['pv'][0]),
+               }
+        # Push engine move and evaluate that; then push player move to
+        # continue. This may not be the right way.
+        board.push(analysis['pv'][0])
+        analysis = await engine.analyse(board, chess.engine.Limit)
+        info['best_move_analysis'] = analysis
+        board.pop()
+        board.push(move)
+        first_pass.append(info)
+
+    for ply in first_pass:
+        print(f"{ply['player_san']}:")
+        print(f"\tPlayer score: {ply['analysis']['score'].white()}")
+        print(f"\tBest move: {ply['best_move']}")
+        print(f"\tBest move score: {ply['best_move_analysis']['score'].white()}")
+
+    os._exit(1)
+    board = game.board()
     prev_score = chess.engine.Cp(0)
     for move in game.mainline_moves():
         played = board.turn
         move_num = board.fullmove_number
         san = board.san_and_push(move)
 
-        #info = await engine.analyse(board, chess.engine.Limit(depth=25))
-        #info = await engine.analyse(board, chess.engine.Limit(time=0.5))
         info = await engine.analyse(board, chess.engine.Limit)
         score = info['score'].white()
         depth = info['depth']
