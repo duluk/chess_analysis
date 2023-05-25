@@ -44,7 +44,7 @@
 #     Then on pass2 go back over the hash or move_stack and do some basic
 #     statistical analysis of the results. See the following chess.com page:
 #     https://support.chess.com/article/2965-how-are-moves-classified-what-is-a-blunder-or-brilliant-and-etc
-
+# 14. Add a 'alert on hanging pieces' flag.
 
 #This could be useful:
 #white_pieces = {'Pawn' : "♙", 'Rook' : "♖", 'Knight' : "♘", 'Bishop' : "♗", 'King' : "♔", 'Queen' : "♕" }
