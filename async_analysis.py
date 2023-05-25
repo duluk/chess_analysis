@@ -65,6 +65,8 @@ parser.add_argument("-e", "--elo", type=int, help="Set engine ELO")
 parser.add_argument("-d", "--depth", type=int, help="Depth from which to do analysis")
 parser.add_argument("-t", "--time", type=float, help="Set minimum move time for evaluation")
 parser.add_argument("-s", "--hash-size", default=1024, type=int, help="Set engine hash size in MB")
+parser.add_argument("-p", "--player-moves", action="store_true", help="Compare each player move to previous player move")
+parser.add_argument("-c", "--computer-moves", action="store_false", default=True, help="Compare each player move to best computer move")
 args = vars(parser.parse_args())
 
 date_str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -113,11 +115,16 @@ def evaluate_player_cp(ply_analysis, prev_ply_analysis, turn_played):
     else:
         return Category.OK
 
-def evaluate_engine_cp(engine_score, player_score):
+def evaluate_engine_cp(engine_score, player_score, turn_played):
     engine_score = engine_score.score(mate_score=25000)
     player_score = player_score.score(mate_score=25000)
 
     delta = engine_score - player_score
+    # Scores are normalized on White, so when evaluating from Black's
+    # perspective we need to invert the result so that a postivie score is good
+    # for Black.
+    delta = -delta if turn_played == chess.BLACK else delta
+
 #    if delta > 20000:
 #        return Category.MATE
     if delta > const.CP_BLUNDER:
@@ -128,20 +135,6 @@ def evaluate_engine_cp(engine_score, player_score):
         return Category.INACCURATE
     else:
         return Category.OK
-
-#def evaluate_category(player_category, engine_category, player_san, engine_san, player_color):
-#    if category == Category.INACCURATE:
-#        print("Inaccuracy ", end='')
-#    elif category == Category.MISTAKE:
-#        print("Mistake ", end='')
-#    elif category == Category.BLUNDER:
-#        print("Blunder ", end='')
-#    elif category == Category.MATE:
-#        print(f"Mate in {score.mate()} ", end='')
-#
-#    if category != Category.OK:
-#        san = f"...{san}" if played == chess.BLACK else san
-#        print(f"at move {move_num}, {san} (p:{prev_score},c:{score}; depth={depth}) (player eval)")
 
 async def main() -> None:
     _, engine = await chess.engine.popen_uci('/usr/bin/stockfish')
@@ -223,6 +216,8 @@ async def main() -> None:
                 'move_num':  board.fullmove_number,
                }
 
+        # It's unfortuate to need to run analysis again. There has to be a way
+        # to avoid this.
         if move == analysis['pv'][0]:
             # Player made best move; no need to eval again
             #info['player_eval'] = analysis['score'].white().score(mate_score=25000)
@@ -249,7 +244,7 @@ async def main() -> None:
 #        print(f"\tBest move: {ply['best_move']}")
 #        print(f"\tBest move score: {ply['best_eval']}")
 
-#    prev_ply = None
+    prev_ply = None
     for ply in reversed(game_analysis):
         san = ply['player_san']
         best_san = ply['best_move']
@@ -258,40 +253,41 @@ async def main() -> None:
         player_score = ply['player_eval']
         engine_score = ply['best_eval']
         depth = ply['analysis']['depth']
-#        prev_score = prev_ply['player_eval'] if prev_ply else chess.engine.Cp(0)
+        prev_score = prev_ply['player_eval'] if prev_ply else chess.engine.Cp(0)
 
-#        player_cp_category = evaluate_player_cp(ply, prev_ply, played)
-        engine_cp_category = evaluate_engine_cp(engine_score, player_score)
+        if args['player_moves']:
+            player_cp_category = evaluate_player_cp(ply, prev_ply, played)
+            if player_cp_category != Category.OK:
+                print("PvP ", end='')
+                if player_cp_category == Category.INACCURATE:
+                    print("Inaccuracy ", end='')
+                elif player_cp_category == Category.MISTAKE:
+                    print("Mistake ", end='')
+                elif player_cp_category == Category.BLUNDER:
+                    print("Blunder ", end='')
+                elif player_cp_category == Category.MATE:
+                    print(f"Mate in {player_score.mate()} ", end='')
 
-#        if player_cp_category != Category.OK:
-#            print("PvP ", end='')
-#            if player_cp_category == Category.INACCURATE:
-#                print("Inaccuracy ", end='')
-#            elif player_cp_category == Category.MISTAKE:
-#                print("Mistake ", end='')
-#            elif player_cp_category == Category.BLUNDER:
-#                print("Blunder ", end='')
-#            elif player_cp_category == Category.MATE:
-#                print(f"Mate in {player_score.mate()} ", end='')
-#
-#            san = f"...{san}" if played == chess.BLACK else san
-#            print(f"at move {move_num}, {san} (p:{prev_score},c:{player_score}; depth={depth})")
+                san = f"...{san}" if played == chess.BLACK else san
+                print(f"at move {move_num}, {san} (p:{prev_score},c:{player_score}; depth={depth})")
 
-        if engine_cp_category != Category.OK:
-            print("PvE ", end='')
-            if engine_cp_category == Category.INACCURATE:
-                print("Inaccuracy ", end='')
-            elif engine_cp_category == Category.MISTAKE:
-                print("Mistake ", end='')
-            elif engine_cp_category == Category.BLUNDER:
-                print("Blunder ", end='')
-            elif engine_cp_category == Category.MATE:
-                print(f"Mate in {engine_score.mate()} ", end='')
+        if args['computer_moves']:
+            engine_cp_category = evaluate_engine_cp(engine_score, player_score, played)
+            if engine_cp_category != Category.OK:
+                print("PvE ", end='')
+                if engine_cp_category == Category.INACCURATE:
+                    print("Inaccuracy ", end='')
+                elif engine_cp_category == Category.MISTAKE:
+                    print("Mistake ", end='')
+                elif engine_cp_category == Category.BLUNDER:
+                    print("Blunder ", end='')
+                elif engine_cp_category == Category.MATE:
+                    print(f"Mate in {engine_score.mate()} ", end='')
 
-            san = f"...{san}" if played == chess.BLACK else san
-            print(f"at move {move_num}, {san}. Best move: {best_san} (p:{player_score},b:{engine_score})")
+                san = f"...{san}" if played == chess.BLACK else san
+                print(f"at move {move_num}, {san}. Best move: {best_san} (p:{player_score},b:{engine_score},d:{depth})")
 
-#        prev_ply = ply
+        prev_ply = ply
 
     await engine.quit()
 
