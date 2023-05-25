@@ -66,7 +66,7 @@ parser.add_argument("-d", "--depth", type=int, help="Depth from which to do anal
 parser.add_argument("-t", "--time", type=float, help="Set minimum move time for evaluation")
 parser.add_argument("-s", "--hash-size", default=1024, type=int, help="Set engine hash size in MB")
 parser.add_argument("-p", "--player-moves", action="store_true", help="Compare each player move to previous player move")
-parser.add_argument("-c", "--computer-moves", action="store_false", default=True, help="Compare each player move to best computer move")
+parser.add_argument("-c", "--computer-moves", action="store_false", help="Compare each player move to best computer move")
 args = vars(parser.parse_args())
 
 date_str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
