@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.11
 
 import sys
 import os
@@ -60,6 +60,7 @@ elif not os.path.exists(const.LOG_DIR):
         os._exit(1)
 
 parser = argparse.ArgumentParser(description="Arg Parse Stuff")
+
 parser.add_argument("-f", "--file", help="PGN file to parse")
 parser.add_argument("-e", "--elo", type=int, help="Set engine ELO")
 parser.add_argument("-d", "--depth", type=int, help="Depth from which to do analysis")
@@ -67,7 +68,19 @@ parser.add_argument("-t", "--time", type=float, help="Set minimum move time for 
 parser.add_argument("-s", "--hash-size", default=1024, type=int, help="Set engine hash size in MB")
 parser.add_argument("-p", "--player-moves", action="store_true", help="Compare each player move to previous player move")
 parser.add_argument("-c", "--computer-moves", action="store_false", help="Compare each player move to best computer move")
+parser.add_argument("-w", "--white-moves", action="store_true", default=False, help="Show only moves from white's perspective")
+parser.add_argument("-b", "--black-moves", action="store_true", default=False, help="Show only moves from black's perspective")
+
 args = vars(parser.parse_args())
+
+# If neither was passed, then we want both to be true. I couldn't find the way
+# to do this in argparse, as defaulting both to True meant if one were passed,
+# the other was still True. Defaulting them to false meant nothing was shown.
+# One scenario meant passing in, say, -w meant that -w was set to False and it
+# showed only Black moves. So I chose to do it this way and be done.
+if not (args['white_moves'] or args['black_moves']):
+  args['white_moves'] = True
+  args['black_moves'] = True
 
 date_str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 logging.basicConfig(filename=f"{const.LOG_DIR}/analysis.debug.{date_str}.log", level=logging.DEBUG)
@@ -137,7 +150,7 @@ def evaluate_engine_cp(engine_score, player_score, turn_played):
         return Category.OK
 
 async def main() -> None:
-    _, engine = await chess.engine.popen_uci('/usr/bin/stockfish')
+    _, engine = await chess.engine.popen_uci('/home/jab3/bin/stockfish')
     
     pgn_file = args['file']
     if not pgn_file:
@@ -257,35 +270,37 @@ async def main() -> None:
 
         if args['player_moves']:
             player_cp_category = evaluate_player_cp(ply, prev_ply, played)
-            if player_cp_category != Category.OK:
-                print("PvP ", end='')
-                if player_cp_category == Category.INACCURATE:
-                    print("Inaccuracy ", end='')
-                elif player_cp_category == Category.MISTAKE:
-                    print("Mistake ", end='')
-                elif player_cp_category == Category.BLUNDER:
-                    print("Blunder ", end='')
-                elif player_cp_category == Category.MATE:
-                    print(f"Mate in {player_score.mate()} ", end='')
+            if (args['white_moves'] and played == chess.WHITE) or (args['black_moves'] and played == chess.BLACK):
+                if player_cp_category != Category.OK:
+                    print("PvP ", end='')
+                    if player_cp_category == Category.INACCURATE:
+                        print("Inaccuracy ", end='')
+                    elif player_cp_category == Category.MISTAKE:
+                        print("Mistake ", end='')
+                    elif player_cp_category == Category.BLUNDER:
+                        print("Blunder ", end='')
+                    elif player_cp_category == Category.MATE:
+                        print(f"Mate in {player_score.mate()} ", end='')
 
-                san = f"...{san}" if played == chess.BLACK else san
-                print(f"at move {move_num}, {san} (p:{prev_score},c:{player_score}; depth={depth})")
+                    san = f"...{san}" if played == chess.BLACK else san
+                    print(f"at move {move_num}, {san} (p:{prev_score},c:{player_score}; depth={depth})")
 
         if args['computer_moves']:
             engine_cp_category = evaluate_engine_cp(engine_score, player_score, played)
-            if engine_cp_category != Category.OK:
-                print("PvE ", end='')
-                if engine_cp_category == Category.INACCURATE:
-                    print("Inaccuracy ", end='')
-                elif engine_cp_category == Category.MISTAKE:
-                    print("Mistake ", end='')
-                elif engine_cp_category == Category.BLUNDER:
-                    print("Blunder ", end='')
-                elif engine_cp_category == Category.MATE:
-                    print(f"Mate in {engine_score.mate()} ", end='')
+            if (args['white_moves'] and played == chess.WHITE) or (args['black_moves'] and played == chess.BLACK):
+                if engine_cp_category != Category.OK:
+                    print("PvE ", end='')
+                    if engine_cp_category == Category.INACCURATE:
+                        print("Inaccuracy ", end='')
+                    elif engine_cp_category == Category.MISTAKE:
+                        print("Mistake ", end='')
+                    elif engine_cp_category == Category.BLUNDER:
+                        print("Blunder ", end='')
+                    elif engine_cp_category == Category.MATE:
+                        print(f"Mate in {engine_score.mate()} ", end='')
 
-                san = f"...{san}" if played == chess.BLACK else san
-                print(f"at move {move_num}, {san}. Best move: {best_san} (p:{player_score},b:{engine_score},d:{depth})")
+                    san = f"...{san}" if played == chess.BLACK else san
+                    print(f"at move {move_num}, {san}. Best move: {best_san} (p:{player_score},b:{engine_score},d:{depth})")
 
         prev_ply = ply
 
